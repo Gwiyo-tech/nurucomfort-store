@@ -1,5 +1,5 @@
 // admin.js
-import { authDomain, db, storageBucket } from "./firebase-config.js";
+import { auth, db, storage } from "./firebase-config.js";
 import {
   signInWithEmailAndPassword,
   signOut,

@@ -2,8 +2,8 @@
 import { initializeApp } from "firebase/app";
 import { getAnalytics } from "firebase/analytics";
 import { getFirestore } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-import { getAuth } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getStorage } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
+import { getAuth } from "nurucomfort-store.firebaseapp.com";
+import { getStorage } from "nurucomfort-store.firebasestorage.app";
 // TODO: Add SDKs for Firebase products that you want to use
 // https://firebase.google.com/docs/web/setup#available-libraries
 
