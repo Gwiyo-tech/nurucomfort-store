@@ -10,11 +10,13 @@
     .container { max-width: 900px; margin: auto; }
     form { background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
     input, textarea, select { width: 100%; padding: 8px; margin: 5px 0 15px; border: 1px solid #ddd; border-radius: 4px; }
-    button { padding: 10px 20px; background: #4b2e24; color: white; border: none; border-radius: 4px; cursor: pointer; }
+    button { padding: 10px 20px; background: #4b2e24; color: white; border: none; border-radius: 4px; cursor: pointer; margin-right: 5px; }
     .product-list { background: white; padding: 15px; border-radius: 8px; }
     .product-item { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding: 10px 0; }
     .product-item img { width: 50px; height: 50px; object-fit: cover; margin-right: 10px; }
     .error { color: red; }
+    .success { color: green; }
+    #statusMessage { margin: 10px 0; padding: 10px; border-radius: 4px; }
   </style>
 </head>
 <body>
@@ -34,10 +36,10 @@
     <!-- Admin Panel (hidden initially) -->
     <div id="adminSection" class="hidden">
       <h2>Product Management</h2>
-      <button id="logoutBtn">Logout</button>
+      <button id="logoutBtn" onclick="logout()">Logout</button>
       <hr>
-      <!-- Add/Edit Form -->
-      <form id="productForm">
+      <!-- Add/Edit Form (no <form> element, just divs) -->
+      <div id="productFormContainer">
         <input type="hidden" id="productId">
         <label>Product Name</label>
         <input type="text" id="name" required>
@@ -51,9 +53,11 @@
         <input type="number" id="stock" min="0" required>
         <label>Product Photo</label>
         <input type="file" id="photo" accept="image/*">
-        <button type="submit">Save Product</button>
-        <button type="button" id="cancelEdit" class="hidden">Cancel Edit</button>
-      </form>
+        <br>
+        <button onclick="saveProduct()">Save Product</button>
+        <button onclick="cancelEdit()" id="cancelEditBtn" class="hidden">Cancel Edit</button>
+      </div>
+      <div id="statusMessage"></div>
       <hr>
       <h3>Existing Products</h3>
       <div id="productList" class="product-list"></div>
@@ -62,16 +66,16 @@
 
   <!-- Firebase SDKs (loaded as ES modules) -->
   <script type="module">
-    // ====== PASTE YOUR FIREBASE CONFIG HERE ======
-    const firebaseConfig = {
-      apiKey: "AIzaSyC18uMStI4LJXWcjS2EJWGkzMC9gyPTaU0",
-      authDomain: "nurucomfort-store.firebaseapp.com",
-      projectId: "nurucomfort-store",
-      storageBucket: "nurucomfort-store.firebasestorage.app",
-      messagingSenderId: "177073380235",
-      appId: "1:177073380235:web:7102c99ad76fd0beffad8e",
-      measurementId: "G-GK10B0T60R",
-    };
+        // ====== PASTE YOUR FIREBASE CONFIG HERE ======
+        const firebaseConfig = {
+          apiKey: "AIzaSyC18uMStI4LJXWcjS2EJWGkzMC9gyPTaU0",
+          authDomain: "nurucomfort-store.firebaseapp.com",
+          projectId: "nurucomfort-store",
+          storageBucket: "nurucomfort-store.firebasestorage.app",
+          messagingSenderId: "177073380235",
+          appId: "1:177073380235:web:7102c99ad76fd0beffad8e",
+          measurementId: "G-GK10B0T60R",
+        };
     // =============================================
 
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
@@ -84,78 +88,97 @@
     const db = getFirestore(app);
     const storage = getStorage(app);
 
-    // DOM elements
+    // Global variables
+    let editingProductId = null;
+
+    // DOM references
     const loginSection = document.getElementById('loginSection');
     const adminSection = document.getElementById('adminSection');
     const loginForm = document.getElementById('loginForm');
     const loginError = document.getElementById('loginError');
-    const logoutBtn = document.getElementById('logoutBtn');
-    const productForm = document.getElementById('productForm');
     const productList = document.getElementById('productList');
-    const cancelEditBtn = document.getElementById('cancelEdit');
+    const statusMessage = document.getElementById('statusMessage');
+    const cancelEditBtn = document.getElementById('cancelEditBtn');
 
-    let editingProductId = null;
-
-    // Auth state listener
-    onAuthStateChanged(auth, (user) => {
-      if (user) {
-        loginSection.classList.add('hidden');
-        adminSection.classList.remove('hidden');
-        loadProducts();
-      } else {
-        loginSection.classList.remove('hidden');
-        adminSection.classList.add('hidden');
-      }
-    });
-
-    // Login
-    loginForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const email = document.getElementById('email').value;
-      const password = document.getElementById('password').value;
-      try {
-        await signInWithEmailAndPassword(auth, email, password);
-        loginError.textContent = '';
-      } catch (error) {
-        loginError.textContent = error.message;
-      }
-    });
-
-    // Logout
-    logoutBtn.addEventListener('click', async () => {
+    // Make functions global
+    window.logout = async function() {
       await signOut(auth);
-    });
+    };
 
-    // Load products into list
-    async function loadProducts() {
-      const q = query(collection(db, 'products'), orderBy('created_at', 'desc'));
-      const snapshot = await getDocs(q);
-      productList.innerHTML = '';
-      snapshot.forEach(doc => {
-        const product = doc.data();
-        const item = document.createElement('div');
-        item.className = 'product-item';
-        item.innerHTML = `
-          <div style="display:flex; align-items:center;">
-            <img src="${product.image_url || 'https://via.placeholder.com/50'}" alt="${product.name}">
-            <div>
-              <strong>${product.name}</strong> - KES ${product.price.toLocaleString()}
-              <br><small>Stock: ${product.stock_quantity}</small>
-            </div>
-          </div>
-          <div>
-            <button onclick="editProduct('${doc.id}')">Edit</button>
-            <button onclick="deleteProduct('${doc.id}')">Delete</button>
-          </div>
-        `;
-        productList.appendChild(item);
-      });
-    }
+    window.cancelEdit = function() {
+      clearForm();
+      editingProductId = null;
+      cancelEditBtn.classList.add('hidden');
+      statusMessage.textContent = '';
+    };
 
-    // Make functions globally accessible for inline onclick
-    window.editProduct = function(id) {
-      const docRef = doc(db, 'products', id);
-      getDoc(docRef).then(docSnap => {
+    window.saveProduct = async function() {
+      console.log('saveProduct called');
+      const name = document.getElementById('name').value.trim();
+      const description = document.getElementById('description').value.trim();
+      const price = parseFloat(document.getElementById('price').value);
+      const originalPrice = document.getElementById('originalPrice').value ? parseFloat(document.getElementById('originalPrice').value) : null;
+      const stock = parseInt(document.getElementById('stock').value);
+      const photoFile = document.getElementById('photo').files[0];
+
+      // Basic validation
+      if (!name || isNaN(price) || isNaN(stock)) {
+        showStatus('Please fill in all required fields (name, price, stock).', 'error');
+        return;
+      }
+
+      try {
+        let imageUrl = '';
+        if (photoFile) {
+          showStatus('Uploading image...', 'success');
+          const storageRef = ref(storage, `products/${Date.now()}-${photoFile.name}`);
+          await uploadBytes(storageRef, photoFile);
+          imageUrl = await getDownloadURL(storageRef);
+          console.log('Image uploaded:', imageUrl);
+        }
+
+        const productData = {
+          name,
+          description,
+          price,
+          original_price: originalPrice,
+          stock_quantity: stock,
+          updated_at: new Date().toISOString(),
+        };
+
+        if (editingProductId) {
+          // Update existing
+          const productRef = doc(db, 'products', editingProductId);
+          if (!imageUrl) {
+            const oldSnap = await getDoc(productRef);
+            productData.image_url = oldSnap.data().image_url;
+          } else {
+            productData.image_url = imageUrl;
+          }
+          await updateDoc(productRef, productData);
+          showStatus('Product updated successfully!', 'success');
+        } else {
+          // Add new
+          productData.created_at = new Date().toISOString();
+          productData.image_url = imageUrl || null;
+          await addDoc(collection(db, 'products'), productData);
+          showStatus('Product added successfully!', 'success');
+        }
+
+        clearForm();
+        editingProductId = null;
+        cancelEditBtn.classList.add('hidden');
+        loadProducts();
+      } catch (error) {
+        console.error('Error saving product:', error);
+        showStatus('Error: ' + error.message, 'error');
+      }
+    };
+
+    window.editProduct = async function(id) {
+      try {
+        const docRef = doc(db, 'products', id);
+        const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
           const data = docSnap.data();
           document.getElementById('productId').value = id;
@@ -166,68 +189,101 @@
           document.getElementById('stock').value = data.stock_quantity;
           editingProductId = id;
           cancelEditBtn.classList.remove('hidden');
+          showStatus('Editing product. Change fields and click Save.', 'success');
         }
-      });
+      } catch (error) {
+        console.error('Error loading product for edit:', error);
+        showStatus('Error loading product: ' + error.message, 'error');
+      }
     };
 
     window.deleteProduct = async function(id) {
       if (confirm('Delete this product?')) {
-        await deleteDoc(doc(db, 'products', id));
-        loadProducts();
+        try {
+          await deleteDoc(doc(db, 'products', id));
+          showStatus('Product deleted.', 'success');
+          loadProducts();
+        } catch (error) {
+          console.error('Error deleting product:', error);
+          showStatus('Error deleting product: ' + error.message, 'error');
+        }
       }
     };
 
-    // Handle form submission (add or update)
-    productForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const name = document.getElementById('name').value;
-      const description = document.getElementById('description').value;
-      const price = parseFloat(document.getElementById('price').value);
-      const originalPrice = document.getElementById('originalPrice').value ? parseFloat(document.getElementById('originalPrice').value) : null;
-      const stock = parseInt(document.getElementById('stock').value);
-      const photoFile = document.getElementById('photo').files[0];
+    // Helper: clear form fields
+    function clearForm() {
+      document.getElementById('productId').value = '';
+      document.getElementById('name').value = '';
+      document.getElementById('description').value = '';
+      document.getElementById('price').value = '';
+      document.getElementById('originalPrice').value = '';
+      document.getElementById('stock').value = '';
+      document.getElementById('photo').value = '';
+    }
 
-      let imageUrl = '';
-      if (photoFile) {
-        const storageRef = ref(storage, `products/${Date.now()}-${photoFile.name}`);
-        await uploadBytes(storageRef, photoFile);
-        imageUrl = await getDownloadURL(storageRef);
+    // Helper: show status message
+    function showStatus(msg, type) {
+      statusMessage.textContent = msg;
+      statusMessage.className = type === 'error' ? 'error' : 'success';
+    }
+
+    // Load products into list
+    async function loadProducts() {
+      try {
+        const q = query(collection(db, 'products'), orderBy('created_at', 'desc'));
+        const snapshot = await getDocs(q);
+        productList.innerHTML = '';
+        snapshot.forEach(doc => {
+          const product = doc.data();
+          const item = document.createElement('div');
+          item.className = 'product-item';
+          item.innerHTML = `
+            <div style="display:flex; align-items:center;">
+              <img src="${product.image_url || 'https://via.placeholder.com/50'}" alt="${product.name}">
+              <div>
+                <strong>${product.name}</strong> - KES ${product.price.toLocaleString()}
+                <br><small>Stock: ${product.stock_quantity}</small>
+              </div>
+            </div>
+            <div>
+              <button onclick="editProduct('${doc.id}')">Edit</button>
+              <button onclick="deleteProduct('${doc.id}')">Delete</button>
+            </div>
+          `;
+          productList.appendChild(item);
+        });
+      } catch (error) {
+        console.error('Error loading products:', error);
+        showStatus('Error loading products: ' + error.message, 'error');
       }
+    }
 
-      const productData = {
-        name,
-        description,
-        price,
-        original_price: originalPrice,
-        stock_quantity: stock,
-        updated_at: new Date().toISOString(),
-      };
-
-      if (editingProductId) {
-        const productRef = doc(db, 'products', editingProductId);
-        if (!imageUrl) {
-          const oldSnap = await getDoc(productRef);
-          productData.image_url = oldSnap.data().image_url;
-        } else {
-          productData.image_url = imageUrl;
-        }
-        await updateDoc(productRef, productData);
+    // Auth state listener
+    onAuthStateChanged(auth, (user) => {
+      if (user) {
+        console.log('User logged in:', user.email);
+        loginSection.classList.add('hidden');
+        adminSection.classList.remove('hidden');
+        loadProducts();
       } else {
-        productData.created_at = new Date().toISOString();
-        productData.image_url = imageUrl || null;
-        await addDoc(collection(db, 'products'), productData);
+        console.log('No user');
+        loginSection.classList.remove('hidden');
+        adminSection.classList.add('hidden');
       }
-
-      productForm.reset();
-      editingProductId = null;
-      cancelEditBtn.classList.add('hidden');
-      loadProducts();
     });
 
-    cancelEditBtn.addEventListener('click', () => {
-      productForm.reset();
-      editingProductId = null;
-      cancelEditBtn.classList.add('hidden');
+    // Login form
+    loginForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+      try {
+        await signInWithEmailAndPassword(auth, email, password);
+        loginError.textContent = '';
+      } catch (error) {
+        console.error('Login error:', error);
+        loginError.textContent = error.message;
+      }
     });
   </script>
 </body>
