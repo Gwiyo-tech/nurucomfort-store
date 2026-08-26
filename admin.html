@@ -182,13 +182,14 @@
         }
 
         const productData = {
-          name,
-          description,
-          price,
-          original_price: originalPrice,
-          stock_quantity: stock,
-          updated_at: new Date().toISOString(),
-        };
+  name,
+  description,
+  price,
+  original_price: originalPrice,
+  stock_quantity: stock,
+  is_active: true,               // <-- add this line
+  updated_at: new Date().toISOString(),
+};
 
         if (editingProductId) {
           const productRef = doc(db, 'products', editingProductId);
