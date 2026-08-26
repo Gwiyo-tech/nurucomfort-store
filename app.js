@@ -4,9 +4,7 @@ import {
   collection,
   getDocs,
   query,
-  orderBy,
   where,
-  limit,
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 const productsContainer = document.getElementById("productsContainer");
@@ -19,17 +17,33 @@ function createWhatsAppLink(productName) {
 
 async function loadProducts() {
   try {
-    // Fetch only active products, newest first, limit 6
-    const q = query(
-      collection(db, "products"),
-      where("is_active", "==", true),
-      orderBy("created_at", "desc"),
-      limit(6),
-    );
+    // Fetch only active products
+    const q = query(collection(db, "products"), where("is_active", "==", true));
     const snapshot = await getDocs(q);
-    productsContainer.innerHTML = "";
+
+    // Convert to array and sort by created_at descending (newest first)
+    let products = [];
     snapshot.forEach((doc) => {
-      const product = doc.data();
+      products.push({ id: doc.id, ...doc.data() });
+    });
+
+    products.sort((a, b) => {
+      const dateA = a.created_at ? new Date(a.created_at) : new Date(0);
+      const dateB = b.created_at ? new Date(b.created_at) : new Date(0);
+      return dateB - dateA;
+    });
+
+    // Take only the first 6 products
+    products = products.slice(0, 6);
+
+    productsContainer.innerHTML = "";
+    if (products.length === 0) {
+      productsContainer.innerHTML =
+        "<p>No products available yet. Check back soon!</p>";
+      return;
+    }
+
+    products.forEach((product) => {
       const card = document.createElement("div");
       card.className = "product";
       card.innerHTML = `
@@ -49,10 +63,6 @@ async function loadProducts() {
       `;
       productsContainer.appendChild(card);
     });
-    if (snapshot.empty) {
-      productsContainer.innerHTML =
-        "<p>No products available yet. Check back soon!</p>";
-    }
   } catch (error) {
     console.error("Error loading products:", error);
     productsContainer.innerHTML =
