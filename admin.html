@@ -24,10 +24,16 @@
     .tabs { margin-bottom: 20px; }
     .tabs button { background: #ddd; color: #333; }
     .tabs button.active { background: #5c3a2e; color: white; }
-    .category-item { padding: 8px 0; border-bottom: 1px solid #f0f0f0; }
-    .category-item .actions { display: inline-block; margin-left: 20px; }
+    .category-item { padding: 6px 0; border-bottom: 1px solid #f0f0f0; }
+    .category-item .category-name { cursor: pointer; user-select: none; }
+    .category-item .category-name:hover { color: #d9b978; }
+    .category-item .actions { display: inline-block; margin-left: 15px; }
     .category-item .actions button { padding: 4px 8px; font-size: 12px; }
-    .indent { margin-left: 20px; }
+    .category-item .toggle-icon { display: inline-block; width: 20px; text-align: center; }
+    .subcategories { margin-left: 25px; border-left: 2px solid #e0d6c8; padding-left: 10px; }
+    .category-children.collapsed { display: none; }
+    .search-box { margin-bottom: 10px; }
+    .search-box input { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; }
     .inline-form { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
     .inline-form input, .inline-form select { width: auto; flex: 1; min-width: 150px; margin: 0; }
     .inline-form button { margin: 0; }
@@ -91,6 +97,9 @@
 
         <div class="card">
           <h3>Existing Products</h3>
+          <div class="search-box">
+            <input type="text" id="productSearch" placeholder="Search products by name, description, or price..." oninput="filterProducts()">
+          </div>
           <div id="productList" class="product-list"></div>
         </div>
       </div>
@@ -114,7 +123,7 @@
         </div>
 
         <div class="card">
-          <h3>Category Hierarchy</h3>
+          <h3>Category Hierarchy (click to expand/collapse)</h3>
           <div id="categoryTree" class="category-tree"></div>
         </div>
       </div>
@@ -150,6 +159,7 @@
     let editingProductId = null;
     let editingCategoryId = null;
     let allCategories = [];
+    let allProducts = []; // for filtering
 
     // DOM references
     const loginSection = document.getElementById('loginSection');
@@ -164,6 +174,7 @@
     const imagePreview = document.getElementById('imagePreview');
     const categorySelect = document.getElementById('categorySelect');
     const parentCategorySelect = document.getElementById('parentCategory');
+    const productSearchInput = document.getElementById('productSearch');
 
     // Tab switching
     window.showTab = function(tab) {
@@ -386,12 +397,23 @@
       if (confirm('Delete this category? Subcategories and products may be affected.')) {
         try {
           await deleteDoc(doc(db, 'categories', id));
-          // Optionally, you could set products' category_id to null here
           showStatus('Category deleted.', 'success');
           loadCategories();
         } catch (error) {
           console.error('Error deleting category:', error);
           showStatus('Error: ' + error.message, 'error');
+        }
+      }
+    };
+
+    // Toggle subcategory visibility
+    window.toggleSubcategories = function(categoryId) {
+      const childrenContainer = document.getElementById(`children-${categoryId}`);
+      const icon = document.getElementById(`icon-${categoryId}`);
+      if (childrenContainer) {
+        childrenContainer.classList.toggle('collapsed');
+        if (icon) {
+          icon.textContent = childrenContainer.classList.contains('collapsed') ? '▶' : '▼';
         }
       }
     };
@@ -444,24 +466,80 @@
         };
         addOptions(null, '');
 
-        // Display category tree
+        // Display category tree with collapsible subcategories
         categoryTree.innerHTML = '';
         const displayCategories = (parentId, level) => {
           allCategories.filter(c => c.parent_id === parentId).forEach(cat => {
+            const hasChildren = allCategories.some(child => child.parent_id === cat.id);
             const div = document.createElement('div');
             div.className = 'category-item';
-            div.style.marginLeft = level * 20 + 'px';
+            div.style.marginLeft = level * 15 + 'px';
+
+            let toggleHtml = '';
+            if (hasChildren) {
+              toggleHtml = `<span class="toggle-icon" id="icon-${cat.id}" style="cursor:pointer;">▶</span>`;
+            } else {
+              toggleHtml = `<span class="toggle-icon" style="width:20px;"></span>`;
+            }
+
             div.innerHTML = `
-              <span>${cat.icon || ''} ${cat.name}</span>
+              <span class="category-name" onclick="${hasChildren ? `toggleSubcategories('${cat.id}')` : ''}" style="${hasChildren ? 'cursor:pointer;' : ''}">
+                ${toggleHtml} ${cat.icon || ''} ${cat.name}
+              </span>
               <span class="actions">
                 <button onclick="editCategory('${cat.id}')" class="secondary">Edit</button>
                 <button onclick="deleteCategory('${cat.id}')" class="danger">Delete</button>
               </span>
             `;
             categoryTree.appendChild(div);
-            displayCategories(cat.id, level + 1);
+
+            if (hasChildren) {
+              const childrenDiv = document.createElement('div');
+              childrenDiv.id = `children-${cat.id}`;
+              childrenDiv.className = 'subcategories collapsed';
+              categoryTree.appendChild(childrenDiv);
+              // We'll append children into this container by moving the display logic
+              // For simplicity, we'll use a recursive function that appends to a specific container
+              displayChildren(cat.id, level + 1, childrenDiv);
+            }
           });
         };
+
+        const displayChildren = (parentId, level, container) => {
+          allCategories.filter(c => c.parent_id === parentId).forEach(cat => {
+            const hasChildren = allCategories.some(child => child.parent_id === cat.id);
+            const div = document.createElement('div');
+            div.className = 'category-item';
+            div.style.marginLeft = level * 15 + 'px';
+
+            let toggleHtml = '';
+            if (hasChildren) {
+              toggleHtml = `<span class="toggle-icon" id="icon-${cat.id}" style="cursor:pointer;">▶</span>`;
+            } else {
+              toggleHtml = `<span class="toggle-icon" style="width:20px;"></span>`;
+            }
+
+            div.innerHTML = `
+              <span class="category-name" onclick="${hasChildren ? `toggleSubcategories('${cat.id}')` : ''}" style="${hasChildren ? 'cursor:pointer;' : ''}">
+                ${toggleHtml} ${cat.icon || ''} ${cat.name}
+              </span>
+              <span class="actions">
+                <button onclick="editCategory('${cat.id}')" class="secondary">Edit</button>
+                <button onclick="deleteCategory('${cat.id}')" class="danger">Delete</button>
+              </span>
+            `;
+            container.appendChild(div);
+
+            if (hasChildren) {
+              const childrenDiv = document.createElement('div');
+              childrenDiv.id = `children-${cat.id}`;
+              childrenDiv.className = 'subcategories collapsed';
+              container.appendChild(childrenDiv);
+              displayChildren(cat.id, level + 1, childrenDiv);
+            }
+          });
+        };
+
         displayCategories(null, 0);
       } catch (error) {
         console.error('Error loading categories:', error);
@@ -469,35 +547,62 @@
       }
     }
 
-    // Load products list
+    // Load products list (and store allProducts for filtering)
     async function loadProducts() {
       try {
         const snapshot = await getDocs(collection(db, 'products'));
-        productList.innerHTML = '';
+        allProducts = [];
         snapshot.forEach(doc => {
-          const product = doc.data();
-          const item = document.createElement('div');
-          item.className = 'list-item';
-          item.innerHTML = `
-            <div style="display:flex; align-items:center;">
-              <img src="${product.image_url || 'https://via.placeholder.com/50'}" alt="${product.name}">
-              <div>
-                <strong>${product.name}</strong> - KES ${product.price.toLocaleString()}
-                <br><small>Stock: ${product.stock_quantity}</small>
-              </div>
-            </div>
-            <div>
-              <button onclick="editProduct('${doc.id}')">Edit</button>
-              <button onclick="deleteProduct('${doc.id}')" class="danger">Delete</button>
-            </div>
-          `;
-          productList.appendChild(item);
+          allProducts.push({ id: doc.id, ...doc.data() });
         });
+        // Sort by created_at descending if available
+        allProducts.sort((a, b) => {
+          const dateA = a.created_at ? new Date(a.created_at) : new Date(0);
+          const dateB = b.created_at ? new Date(b.created_at) : new Date(0);
+          return dateB - dateA;
+        });
+        filterProducts(); // apply any search filter
       } catch (error) {
         console.error('Error loading products:', error);
         showStatus('Error: ' + error.message, 'error');
       }
     }
+
+    // Filter products based on search input
+    window.filterProducts = function() {
+      const searchTerm = productSearchInput.value.toLowerCase().trim();
+      productList.innerHTML = '';
+      const filtered = allProducts.filter(product => {
+        const name = (product.name || '').toLowerCase();
+        const description = (product.description || '').toLowerCase();
+        const price = product.price ? product.price.toString() : '';
+        return name.includes(searchTerm) || description.includes(searchTerm) || price.includes(searchTerm);
+      });
+
+      if (filtered.length === 0) {
+        productList.innerHTML = '<p>No products match your search.</p>';
+        return;
+      }
+
+      filtered.forEach(product => {
+        const item = document.createElement('div');
+        item.className = 'list-item';
+        item.innerHTML = `
+          <div style="display:flex; align-items:center;">
+            <img src="${product.image_url || 'https://via.placeholder.com/50'}" alt="${product.name}">
+            <div>
+              <strong>${product.name}</strong> - KES ${product.price.toLocaleString()}
+              <br><small>Stock: ${product.stock_quantity}</small>
+            </div>
+          </div>
+          <div>
+            <button onclick="editProduct('${product.id}')">Edit</button>
+            <button onclick="deleteProduct('${product.id}')" class="danger">Delete</button>
+          </div>
+        `;
+        productList.appendChild(item);
+      });
+    };
 
     // Auth state
     onAuthStateChanged(auth, (user) => {
