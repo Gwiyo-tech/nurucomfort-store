@@ -71,6 +71,24 @@
       border-radius: 15px;
       box-shadow: 0 5px 20px rgba(0,0,0,.07);
     }
+    .category {
+  transition: transform 0.2s, box-shadow 0.2s, border 0.2s;
+  border: 2px solid transparent;
+}
+
+.category:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 25px rgba(0,0,0,0.12);
+}
+
+.category.active {
+  border-color: #d9b978; /* warm gold accent */
+  background: #fdf6ec;    /* very light cream */
+}
+
+.category.all-products {
+  background: #f0e6d8;   /* slightly different background to stand out */
+}
     .category-icon { font-size: 45px; margin-bottom: 12px; }
     .category h3 { color: #5c3a2e; margin-bottom: 8px; }
     .products {

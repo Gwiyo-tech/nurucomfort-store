@@ -18,7 +18,6 @@ let allProducts = [];
 let allCategories = [];
 let currentCategoryId = null; // null means all
 
-// DOM elements
 const productsContainer = document.getElementById("productsContainer");
 const categoriesContainer = document.getElementById("categoriesContainer");
 
@@ -29,17 +28,16 @@ async function loadCategories() {
     snapshot.forEach((doc) => {
       allCategories.push({ id: doc.id, ...doc.data() });
     });
-    // Sort by sort_order then name
     allCategories.sort(
       (a, b) =>
         (a.sort_order || 0) - (b.sort_order || 0) ||
         a.name.localeCompare(b.name),
     );
 
-    // Render categories as clickable cards
+    // Render only top-level categories
     categoriesContainer.innerHTML = "";
     allCategories
-      .filter((c) => !c.parent_id) // show only top-level categories in the main grid
+      .filter((c) => !c.parent_id)
       .forEach((cat) => {
         const card = document.createElement("div");
         card.className = "category";
@@ -52,9 +50,38 @@ async function loadCategories() {
         card.addEventListener("click", () => filterByCategory(cat.id));
         categoriesContainer.appendChild(card);
       });
+
+    // Add "All Products" card at the beginning
+    addAllProductsCard();
   } catch (error) {
     console.error("Error loading categories:", error);
   }
+}
+
+function addAllProductsCard() {
+  const allCard = document.createElement("div");
+  allCard.className = "category all-products";
+  allCard.innerHTML = `
+    <div class="category-icon">🛍️</div>
+    <h3>All Products</h3>
+    <p>View everything</p>
+  `;
+  allCard.style.cursor = "pointer";
+  allCard.addEventListener("click", () => {
+    currentCategoryId = null;
+    renderProducts();
+    setActiveCategoryCard(allCard);
+  });
+  categoriesContainer.prepend(allCard);
+  // Set active by default
+  setActiveCategoryCard(allCard);
+}
+
+function setActiveCategoryCard(activeCard) {
+  document
+    .querySelectorAll(".category")
+    .forEach((card) => card.classList.remove("active"));
+  activeCard.classList.add("active");
 }
 
 async function loadProducts() {
@@ -65,7 +92,6 @@ async function loadProducts() {
     snapshot.forEach((doc) => {
       allProducts.push({ id: doc.id, ...doc.data() });
     });
-    // Sort by created_at descending (newest first)
     allProducts.sort((a, b) => {
       const dateA = a.created_at ? new Date(a.created_at) : new Date(0);
       const dateB = b.created_at ? new Date(b.created_at) : new Date(0);
@@ -82,24 +108,18 @@ async function loadProducts() {
 function renderProducts() {
   let productsToShow = allProducts;
   if (currentCategoryId) {
-    // Include subcategories
     const subcategoryIds = getAllSubcategoryIds(currentCategoryId);
     productsToShow = allProducts.filter((p) =>
       subcategoryIds.includes(p.category_id),
     );
-  } else {
-    productsToShow = allProducts;
   }
-
-  // Limit to 6 for featured (you can change or remove this)
-  productsToShow = productsToShow.slice(0, 6);
+  productsToShow = productsToShow.slice(0, 6); // keep max 6 for featured
 
   productsContainer.innerHTML = "";
   if (productsToShow.length === 0) {
     productsContainer.innerHTML = "<p>No products found in this category.</p>";
     return;
   }
-
   productsToShow.forEach((product) => {
     const card = document.createElement("div");
     card.className = "product";
@@ -113,9 +133,7 @@ function renderProducts() {
         <h3>${product.name}</h3>
         <p>${product.description || ""}</p>
         <div class="price">KES ${product.price.toLocaleString()}</div>
-        <a href="${createWhatsAppLink(product.name)}" class="whatsapp" target="_blank">
-          ORDER ON WHATSAPP
-        </a>
+        <a href="${createWhatsAppLink(product.name)}" class="whatsapp" target="_blank">ORDER ON WHATSAPP</a>
       </div>
     `;
     productsContainer.appendChild(card);
@@ -134,27 +152,20 @@ function getAllSubcategoryIds(parentId) {
 function filterByCategory(categoryId) {
   currentCategoryId = categoryId;
   renderProducts();
-  // Update UI (e.g., highlight active category button)
-  document
-    .querySelectorAll(".category")
-    .forEach((el) => (el.style.border = "none"));
-  // You could add a more sophisticated active state
-}
-
-// Add "All Products" button functionality
-function addAllButton() {
-  const allButton = document.createElement("button");
-  allButton.textContent = "All Products";
-  allButton.style.margin = "10px";
-  allButton.addEventListener("click", () => {
-    currentCategoryId = null;
-    renderProducts();
+  // Find the clicked card and set active
+  const cards = document.querySelectorAll(".category");
+  cards.forEach((card) => {
+    if (
+      card.textContent.includes(
+        allCategories.find((c) => c.id === categoryId)?.name,
+      )
+    ) {
+      setActiveCategoryCard(card);
+    }
   });
-  categoriesContainer.prepend(allButton);
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
   await loadCategories();
   await loadProducts();
-  addAllButton();
 });
