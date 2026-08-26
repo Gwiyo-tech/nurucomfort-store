@@ -5,6 +5,7 @@ import {
   getDocs,
   query,
   orderBy,
+  where,
   limit,
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
@@ -18,9 +19,10 @@ function createWhatsAppLink(productName) {
 
 async function loadProducts() {
   try {
-    // Fetch latest 6 products (adjust limit as needed)
+    // Fetch only active products, newest first, limit 6
     const q = query(
       collection(db, "products"),
+      where("is_active", "==", true),
       orderBy("created_at", "desc"),
       limit(6),
     );
@@ -32,17 +34,25 @@ async function loadProducts() {
       card.className = "product";
       card.innerHTML = `
         <div class="product-image">
-          <img src="${product.image_url || "https://via.placeholder.com/300x230?text=Product"}" alt="${product.name}" style="width:100%; height:100%; object-fit:cover;">
+          <img src="${product.image_url || "https://via.placeholder.com/300x230?text=Product"}" 
+               alt="${product.name}" 
+               style="width:100%; height:100%; object-fit:cover;">
         </div>
         <div class="product-info">
           <h3>${product.name}</h3>
           <p>${product.description || ""}</p>
           <div class="price">KES ${product.price.toLocaleString()}</div>
-          <a href="${createWhatsAppLink(product.name)}" class="whatsapp" target="_blank">ORDER ON WHATSAPP</a>
+          <a href="${createWhatsAppLink(product.name)}" class="whatsapp" target="_blank">
+            ORDER ON WHATSAPP
+          </a>
         </div>
       `;
       productsContainer.appendChild(card);
     });
+    if (snapshot.empty) {
+      productsContainer.innerHTML =
+        "<p>No products available yet. Check back soon!</p>";
+    }
   } catch (error) {
     console.error("Error loading products:", error);
     productsContainer.innerHTML =
