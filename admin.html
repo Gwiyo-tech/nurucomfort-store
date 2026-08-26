@@ -16,7 +16,9 @@
     .product-item img { width: 50px; height: 50px; object-fit: cover; margin-right: 10px; }
     .error { color: red; }
     .success { color: green; }
+    .info { color: blue; }
     #statusMessage { margin: 10px 0; padding: 10px; border-radius: 4px; }
+    #imagePreview { max-width: 200px; max-height: 200px; margin: 10px 0; display: none; }
   </style>
 </head>
 <body>
@@ -33,13 +35,12 @@
       <p id="loginError" class="error"></p>
     </div>
 
-    <!-- Admin Panel (hidden initially) -->
+    <!-- Admin Panel -->
     <div id="adminSection" class="hidden">
       <h2>Product Management</h2>
-      <button id="logoutBtn" onclick="logout()">Logout</button>
+      <button onclick="logout()">Logout</button>
       <hr>
-      <!-- Add/Edit Form (no <form> element, just divs) -->
-      <div id="productFormContainer">
+      <div>
         <input type="hidden" id="productId">
         <label>Product Name</label>
         <input type="text" id="name" required>
@@ -52,7 +53,8 @@
         <label>Stock Quantity</label>
         <input type="number" id="stock" min="0" required>
         <label>Product Photo</label>
-        <input type="file" id="photo" accept="image/*">
+        <input type="file" id="photo" accept="image/*" onchange="previewImage(this)">
+        <img id="imagePreview" alt="Preview">
         <br>
         <button onclick="saveProduct()">Save Product</button>
         <button onclick="cancelEdit()" id="cancelEditBtn" class="hidden">Cancel Edit</button>
@@ -64,31 +66,31 @@
     </div>
   </div>
 
-  <!-- Firebase SDKs (loaded as ES modules) -->
   <script type="module">
-        // ====== PASTE YOUR FIREBASE CONFIG HERE ======
-        const firebaseConfig = {
-          apiKey: "AIzaSyC18uMStI4LJXWcjS2EJWGkzMC9gyPTaU0",
-          authDomain: "nurucomfort-store.firebaseapp.com",
-          projectId: "nurucomfort-store",
-          storageBucket: "nurucomfort-store.firebasestorage.app",
-          messagingSenderId: "177073380235",
-          appId: "1:177073380235:web:7102c99ad76fd0beffad8e",
-          measurementId: "G-GK10B0T60R",
-        };
-    // =============================================
+    // ====== YOUR FIREBASE CONFIG (for Firestore only) ======
+    const firebaseConfig = {
+      apiKey: "YOUR_API_KEY",
+      authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+      projectId: "YOUR_PROJECT_ID",
+      storageBucket: "YOUR_PROJECT_ID.appspot.com",
+      messagingSenderId: "YOUR_SENDER_ID",
+      appId: "YOUR_APP_ID"
+    };
+    // ========================================================
+
+    // ====== YOUR CLOUDINARY CONFIG ======
+    const CLOUDINARY_CLOUD_NAME = 'uv4jkop7';
+    const CLOUDINARY_UPLOAD_PRESET = 'nuru_products';
+    // ====================================
 
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
     import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
     import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, query, orderBy, getDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-    import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
 
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const db = getFirestore(app);
-    const storage = getStorage(app);
 
-    // Global variables
     let editingProductId = null;
 
     // DOM references
@@ -99,12 +101,26 @@
     const productList = document.getElementById('productList');
     const statusMessage = document.getElementById('statusMessage');
     const cancelEditBtn = document.getElementById('cancelEditBtn');
+    const imagePreview = document.getElementById('imagePreview');
 
-    // Make functions global
+    // Preview image before upload
+    window.previewImage = function(input) {
+      if (input.files && input.files[0]) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          imagePreview.src = e.target.result;
+          imagePreview.style.display = 'block';
+        };
+        reader.readAsDataURL(input.files[0]);
+      }
+    };
+
+    // Logout
     window.logout = async function() {
       await signOut(auth);
     };
 
+    // Cancel edit
     window.cancelEdit = function() {
       clearForm();
       editingProductId = null;
@@ -112,6 +128,36 @@
       statusMessage.textContent = '';
     };
 
+    // Upload image to Cloudinary
+    async function uploadToCloudinary(file) {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+      formData.append('folder', 'products');
+
+      try {
+        const response = await fetch(
+          `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
+          {
+            method: 'POST',
+            body: formData
+          }
+        );
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error?.message || 'Upload failed');
+        }
+
+        const data = await response.json();
+        return data.secure_url;
+      } catch (error) {
+        console.error('Cloudinary upload error:', error);
+        throw error;
+      }
+    }
+
+    // Save product
     window.saveProduct = async function() {
       console.log('saveProduct called');
       const name = document.getElementById('name').value.trim();
@@ -121,7 +167,6 @@
       const stock = parseInt(document.getElementById('stock').value);
       const photoFile = document.getElementById('photo').files[0];
 
-      // Basic validation
       if (!name || isNaN(price) || isNaN(stock)) {
         showStatus('Please fill in all required fields (name, price, stock).', 'error');
         return;
@@ -130,10 +175,8 @@
       try {
         let imageUrl = '';
         if (photoFile) {
-          showStatus('Uploading image...', 'success');
-          const storageRef = ref(storage, `products/${Date.now()}-${photoFile.name}`);
-          await uploadBytes(storageRef, photoFile);
-          imageUrl = await getDownloadURL(storageRef);
+          showStatus('Uploading image...', 'info');
+          imageUrl = await uploadToCloudinary(photoFile);
           console.log('Image uploaded:', imageUrl);
         }
 
@@ -147,7 +190,6 @@
         };
 
         if (editingProductId) {
-          // Update existing
           const productRef = doc(db, 'products', editingProductId);
           if (!imageUrl) {
             const oldSnap = await getDoc(productRef);
@@ -158,7 +200,6 @@
           await updateDoc(productRef, productData);
           showStatus('Product updated successfully!', 'success');
         } else {
-          // Add new
           productData.created_at = new Date().toISOString();
           productData.image_url = imageUrl || null;
           await addDoc(collection(db, 'products'), productData);
@@ -175,6 +216,7 @@
       }
     };
 
+    // Edit product
     window.editProduct = async function(id) {
       try {
         const docRef = doc(db, 'products', id);
@@ -189,14 +231,15 @@
           document.getElementById('stock').value = data.stock_quantity;
           editingProductId = id;
           cancelEditBtn.classList.remove('hidden');
-          showStatus('Editing product. Change fields and click Save.', 'success');
+          showStatus('Editing product. Change fields and click Save.', 'info');
         }
       } catch (error) {
-        console.error('Error loading product for edit:', error);
-        showStatus('Error loading product: ' + error.message, 'error');
+        console.error('Error loading product:', error);
+        showStatus('Error: ' + error.message, 'error');
       }
     };
 
+    // Delete product
     window.deleteProduct = async function(id) {
       if (confirm('Delete this product?')) {
         try {
@@ -205,12 +248,11 @@
           loadProducts();
         } catch (error) {
           console.error('Error deleting product:', error);
-          showStatus('Error deleting product: ' + error.message, 'error');
+          showStatus('Error: ' + error.message, 'error');
         }
       }
     };
 
-    // Helper: clear form fields
     function clearForm() {
       document.getElementById('productId').value = '';
       document.getElementById('name').value = '';
@@ -219,15 +261,14 @@
       document.getElementById('originalPrice').value = '';
       document.getElementById('stock').value = '';
       document.getElementById('photo').value = '';
+      imagePreview.style.display = 'none';
     }
 
-    // Helper: show status message
     function showStatus(msg, type) {
       statusMessage.textContent = msg;
-      statusMessage.className = type === 'error' ? 'error' : 'success';
+      statusMessage.className = type;
     }
 
-    // Load products into list
     async function loadProducts() {
       try {
         const q = query(collection(db, 'products'), orderBy('created_at', 'desc'));
@@ -254,11 +295,11 @@
         });
       } catch (error) {
         console.error('Error loading products:', error);
-        showStatus('Error loading products: ' + error.message, 'error');
+        showStatus('Error: ' + error.message, 'error');
       }
     }
 
-    // Auth state listener
+    // Auth state
     onAuthStateChanged(auth, (user) => {
       if (user) {
         console.log('User logged in:', user.email);
@@ -272,7 +313,7 @@
       }
     });
 
-    // Login form
+    // Login
     loginForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const email = document.getElementById('email').value;
