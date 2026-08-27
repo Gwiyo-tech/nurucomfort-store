@@ -1,4 +1,3 @@
-// app.js
 import { db } from "./firebase-config.js";
 import {
   collection,
@@ -8,72 +7,68 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 const WHATSAPP_NUMBER = "254782250055";
+let allProducts = [];
+let allCategories = [];
+let currentCategoryId = null;
+let searchTerm = "";
+
+const productsContainer = document.getElementById("productsContainer");
+const categoriesContainer = document.getElementById("categoriesContainer");
+const searchInput = document.getElementById("searchInput");
+const viewAllButton = document.getElementById("viewAllButton");
 
 function createWhatsAppLink(productName) {
   const msg = `Hello Nuru Comfort, I would like to order ${productName}. Is it available?`;
   return `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(msg)}`;
 }
 
-let allProducts = [];
-let allCategories = [];
-let currentCategoryId = null; // null means all
-
-const productsContainer = document.getElementById("productsContainer");
-const categoriesContainer = document.getElementById("categoriesContainer");
-
 async function loadCategories() {
   try {
     const snapshot = await getDocs(collection(db, "categories"));
     allCategories = [];
-    snapshot.forEach((doc) => {
-      allCategories.push({ id: doc.id, ...doc.data() });
-    });
+    snapshot.forEach((doc) =>
+      allCategories.push({ id: doc.id, ...doc.data() }),
+    );
     allCategories.sort(
       (a, b) =>
         (a.sort_order || 0) - (b.sort_order || 0) ||
         a.name.localeCompare(b.name),
     );
-
-    // Render only top-level categories
-    categoriesContainer.innerHTML = "";
-    allCategories
-      .filter((c) => !c.parent_id)
-      .forEach((cat) => {
-        const card = document.createElement("div");
-        card.className = "category";
-        card.innerHTML = `
-          <div class="category-icon">${cat.icon || "🛍️"}</div>
-          <h3>${cat.name}</h3>
-          <p>${cat.description || ""}</p>
-        `;
-        card.style.cursor = "pointer";
-        card.addEventListener("click", () => filterByCategory(cat.id));
-        categoriesContainer.appendChild(card);
-      });
-
-    // Add "All Products" card at the beginning
-    addAllProductsCard();
+    renderCategories();
   } catch (error) {
     console.error("Error loading categories:", error);
   }
 }
 
-function addAllProductsCard() {
+function renderCategories() {
+  categoriesContainer.innerHTML = "";
+  // "All Products" card
   const allCard = document.createElement("div");
   allCard.className = "category all-products";
-  allCard.innerHTML = `
-    <div class="category-icon">🛍️</div>
-    <h3>All Products</h3>
-    <p>View everything</p>
-  `;
+  allCard.innerHTML = `<div class="category-icon">🛍️</div><h3>All Products</h3><p>View everything</p>`;
   allCard.style.cursor = "pointer";
   allCard.addEventListener("click", () => {
     currentCategoryId = null;
     renderProducts();
     setActiveCategoryCard(allCard);
   });
-  categoriesContainer.prepend(allCard);
-  // Set active by default
+  categoriesContainer.appendChild(allCard);
+
+  // Top-level categories
+  allCategories
+    .filter((c) => !c.parent_id)
+    .forEach((cat) => {
+      const card = document.createElement("div");
+      card.className = "category";
+      card.innerHTML = `<div class="category-icon">${cat.icon || "🛍️"}</div><h3>${cat.name}</h3><p>${cat.description || ""}</p>`;
+      card.style.cursor = "pointer";
+      card.addEventListener("click", () => {
+        currentCategoryId = cat.id;
+        renderProducts();
+        setActiveCategoryCard(card);
+      });
+      categoriesContainer.appendChild(card);
+    });
   setActiveCategoryCard(allCard);
 }
 
@@ -89,45 +84,49 @@ async function loadProducts() {
     const q = query(collection(db, "products"), where("is_active", "==", true));
     const snapshot = await getDocs(q);
     allProducts = [];
-    snapshot.forEach((doc) => {
-      allProducts.push({ id: doc.id, ...doc.data() });
-    });
-    allProducts.sort((a, b) => {
-      const dateA = a.created_at ? new Date(a.created_at) : new Date(0);
-      const dateB = b.created_at ? new Date(b.created_at) : new Date(0);
-      return dateB - dateA;
-    });
+    snapshot.forEach((doc) => allProducts.push({ id: doc.id, ...doc.data() }));
+    allProducts.sort(
+      (a, b) => (b.created_at?.seconds || 0) - (a.created_at?.seconds || 0),
+    );
     renderProducts();
   } catch (error) {
     console.error("Error loading products:", error);
-    productsContainer.innerHTML =
-      "<p>Error loading products. Please try again later.</p>";
+    productsContainer.innerHTML = "<p>Error loading products.</p>";
   }
 }
 
 function renderProducts() {
   let productsToShow = allProducts;
   if (currentCategoryId) {
-    const subcategoryIds = getAllSubcategoryIds(currentCategoryId);
-    productsToShow = allProducts.filter((p) =>
-      subcategoryIds.includes(p.category_id),
+    const subIds = getAllSubcategoryIds(currentCategoryId);
+    productsToShow = productsToShow.filter((p) =>
+      subIds.includes(p.category_id),
     );
   }
-  productsToShow = productsToShow.slice(0, 6); // keep max 6 for featured
-
+  if (searchTerm) {
+    productsToShow = productsToShow.filter(
+      (p) =>
+        (p.name || "").toLowerCase().includes(searchTerm) ||
+        (p.description || "").toLowerCase().includes(searchTerm),
+    );
+  }
+  // Show limited products on homepage, but all if "view all" clicked
+  // For simplicity, we'll show all in the container
   productsContainer.innerHTML = "";
   if (productsToShow.length === 0) {
-    productsContainer.innerHTML = "<p>No products found in this category.</p>";
+    productsContainer.innerHTML = "<p>No products found.</p>";
     return;
   }
   productsToShow.forEach((product) => {
     const card = document.createElement("div");
     card.className = "product";
+    const mainImage =
+      product.image_urls && product.image_urls.length > 0
+        ? product.image_urls[0]
+        : product.image_url;
     card.innerHTML = `
       <div class="product-image">
-        <img src="${product.image_url || "https://via.placeholder.com/300x230?text=Product"}" 
-             alt="${product.name}" 
-             style="width:100%; height:100%; object-fit:cover;">
+        <img src="${mainImage || "https://via.placeholder.com/300x230?text=Product"}" alt="${product.name}" style="width:100%; height:100%; object-fit:cover;">
       </div>
       <div class="product-info">
         <h3>${product.name}</h3>
@@ -149,23 +148,21 @@ function getAllSubcategoryIds(parentId) {
   return ids;
 }
 
-function filterByCategory(categoryId) {
-  currentCategoryId = categoryId;
-  renderProducts();
-  // Find the clicked card and set active
-  const cards = document.querySelectorAll(".category");
-  cards.forEach((card) => {
-    if (
-      card.textContent.includes(
-        allCategories.find((c) => c.id === categoryId)?.name,
-      )
-    ) {
-      setActiveCategoryCard(card);
-    }
-  });
-}
-
 document.addEventListener("DOMContentLoaded", async () => {
   await loadCategories();
   await loadProducts();
+  if (searchInput) {
+    searchInput.addEventListener("input", (e) => {
+      searchTerm = e.target.value.toLowerCase().trim();
+      renderProducts();
+    });
+  }
+  if (viewAllButton) {
+    viewAllButton.addEventListener("click", () => {
+      currentCategoryId = null;
+      searchTerm = "";
+      if (searchInput) searchInput.value = "";
+      renderProducts();
+    });
+  }
 });
