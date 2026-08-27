@@ -1,3 +1,4 @@
+// app.js
 import { db } from "./firebase-config.js";
 import {
   collection,
@@ -7,15 +8,20 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 const WHATSAPP_NUMBER = "254782250055";
+
 let allProducts = [];
 let allCategories = [];
 let currentCategoryId = null;
 let searchTerm = "";
+let currentSlideIndex = 0;
+let currentProductImages = [];
 
 const productsContainer = document.getElementById("productsContainer");
 const categoriesContainer = document.getElementById("categoriesContainer");
 const searchInput = document.getElementById("searchInput");
-const viewAllButton = document.getElementById("viewAllButton");
+const modal = document.getElementById("imageModal");
+const modalSlides = document.getElementById("modalSlides");
+const modalDots = document.getElementById("modalDots");
 
 function createWhatsAppLink(productName) {
   const msg = `Hello Nuru Comfort, I would like to order ${productName}. Is it available?`;
@@ -42,7 +48,7 @@ async function loadCategories() {
 
 function renderCategories() {
   categoriesContainer.innerHTML = "";
-  // "All Products" card
+  // All Products card
   const allCard = document.createElement("div");
   allCard.className = "category all-products";
   allCard.innerHTML = `<div class="category-icon">🛍️</div><h3>All Products</h3><p>View everything</p>`;
@@ -54,7 +60,6 @@ function renderCategories() {
   });
   categoriesContainer.appendChild(allCard);
 
-  // Top-level categories
   allCategories
     .filter((c) => !c.parent_id)
     .forEach((cat) => {
@@ -110,23 +115,28 @@ function renderProducts() {
         (p.description || "").toLowerCase().includes(searchTerm),
     );
   }
-  // Show limited products on homepage, but all if "view all" clicked
-  // For simplicity, we'll show all in the container
+
   productsContainer.innerHTML = "";
   if (productsToShow.length === 0) {
     productsContainer.innerHTML = "<p>No products found.</p>";
     return;
   }
+
   productsToShow.forEach((product) => {
     const card = document.createElement("div");
     card.className = "product";
-    const mainImage =
+    const images =
       product.image_urls && product.image_urls.length > 0
-        ? product.image_urls[0]
-        : product.image_url;
+        ? product.image_urls
+        : product.image_url
+          ? [product.image_url]
+          : [];
+    const mainImage =
+      images[0] || "https://via.placeholder.com/300x230?text=Product";
     card.innerHTML = `
-      <div class="product-image">
-        <img src="${mainImage || "https://via.placeholder.com/300x230?text=Product"}" alt="${product.name}" style="width:100%; height:100%; object-fit:cover;">
+      <div class="product-image" style="cursor:pointer;" data-images='${JSON.stringify(images)}'>
+        <img src="${mainImage}" alt="${product.name}" style="width:100%; height:100%; object-fit:cover;">
+        ${images.length > 1 ? '<span class="image-count">' + images.length + " photos</span>" : ""}
       </div>
       <div class="product-info">
         <h3>${product.name}</h3>
@@ -135,6 +145,11 @@ function renderProducts() {
         <a href="${createWhatsAppLink(product.name)}" class="whatsapp" target="_blank">ORDER ON WHATSAPP</a>
       </div>
     `;
+    // Add click event to image container
+    const imageDiv = card.querySelector(".product-image");
+    imageDiv.addEventListener("click", () => {
+      openModal(images);
+    });
     productsContainer.appendChild(card);
   });
 }
@@ -148,6 +163,41 @@ function getAllSubcategoryIds(parentId) {
   return ids;
 }
 
+// Modal functions
+function openModal(images) {
+  currentProductImages = images;
+  currentSlideIndex = 0;
+  modal.style.display = "block";
+  showSlide(currentSlideIndex);
+}
+
+function closeModal() {
+  modal.style.display = "none";
+}
+
+function showSlide(index) {
+  if (index < 0) index = currentProductImages.length - 1;
+  if (index >= currentProductImages.length) index = 0;
+  currentSlideIndex = index;
+  modalSlides.innerHTML = `<img src="${currentProductImages[index]}" alt="Product view">`;
+  // Update dots
+  modalDots.innerHTML = "";
+  currentProductImages.forEach((_, i) => {
+    const dot = document.createElement("span");
+    dot.className = "modal-dot" + (i === currentSlideIndex ? " active" : "");
+    dot.addEventListener("click", () => showSlide(i));
+    modalDots.appendChild(dot);
+  });
+}
+
+function changeSlide(direction) {
+  showSlide(currentSlideIndex + direction);
+}
+
+// Make modal functions global
+window.closeModal = closeModal;
+window.changeSlide = changeSlide;
+
 document.addEventListener("DOMContentLoaded", async () => {
   await loadCategories();
   await loadProducts();
@@ -157,12 +207,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       renderProducts();
     });
   }
-  if (viewAllButton) {
-    viewAllButton.addEventListener("click", () => {
-      currentCategoryId = null;
-      searchTerm = "";
-      if (searchInput) searchInput.value = "";
-      renderProducts();
-    });
-  }
+  // Close modal if clicking outside content
+  window.addEventListener("click", (e) => {
+    if (e.target === modal) closeModal();
+  });
 });
